@@ -1,15 +1,17 @@
 ﻿using TMNFRanked.Controller;
 
-const string TargetMap = @"Challenges\test2.Gbx";
-
 Console.WriteLine("TMNF Ranked Controller");
-Console.WriteLine("Connecting...");
+Console.WriteLine("Manual Flow Control test v2");
+Console.WriteLine();
 
 try
 {
-    await using var client = new TmnfGbxRemoteClient();
+    await using var client =
+        new TmnfGbxRemoteClient();
 
-    await client.ConnectAsync("127.0.0.1", 5000);
+    await client.ConnectAsync(
+        "127.0.0.1",
+        5000);
 
     var authenticated =
         await client.AuthenticateAsync(
@@ -18,119 +20,129 @@ try
 
     if (!authenticated)
     {
-        Console.WriteLine("Authentication failed.");
+        Console.WriteLine(
+            "Authentication failed.");
+
         return;
     }
 
-    Console.WriteLine("Authentication succeeded.");
-    Console.WriteLine();
-
-    var current = await client.GetCurrentChallengeInfoAsync();
-
-    Console.WriteLine("CURRENT MAP");
-    Console.WriteLine($"Name: {current.Name}");
-    Console.WriteLine($"UID:  {current.UId}");
-    Console.WriteLine($"File: {current.FileName}");
-    Console.WriteLine();
-
-    var challengeList =
-        await client.GetChallengeListAsync();
-
-    Console.WriteLine("SERVER SELECTION");
-
-    foreach (var challenge in challengeList)
-    {
-        Console.WriteLine(
-            $"- {challenge.Name} | {challenge.FileName} | {challenge.UId}");
-    }
-
-    Console.WriteLine();
-
-    var targetAlreadySelected =
-        challengeList.Any(
-            challenge =>
-                string.Equals(
-                    challenge.FileName,
-                    TargetMap,
-                    StringComparison.OrdinalIgnoreCase));
-
-    if (!targetAlreadySelected)
-    {
-        Console.WriteLine(
-            $"{TargetMap} is not in the server selection.");
-
-        Console.WriteLine("Adding it...");
-
-        var added =
-            await client.AddChallengeAsync(TargetMap);
-
-        Console.WriteLine(
-            added
-                ? "Map added to server selection."
-                : "AddChallenge returned false.");
-
-        if (!added)
-            return;
-    }
-    else
-    {
-        Console.WriteLine(
-            $"{TargetMap} is already in the server selection.");
-    }
+    Console.WriteLine(
+        "Authentication succeeded.");
 
     Console.WriteLine();
     Console.WriteLine(
-        "Press Enter to switch the server to test2.Gbx.");
+        "Enabling callbacks...");
+
+    var callbacksEnabled =
+        await client.EnableCallbacksAsync(true);
+
+    Console.WriteLine(
+        callbacksEnabled
+            ? "Callbacks enabled."
+            : "EnableCallbacks(true) returned false.");
+
+    if (!callbacksEnabled)
+        return;
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Setting ChatTime to 0...");
+
+    var chatTimeChanged =
+        await client.SetChatTimeAsync(0);
+
+    Console.WriteLine(
+        chatTimeChanged
+            ? "SetChatTime(0) accepted."
+            : "SetChatTime(0) returned false.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Enabling Manual Flow Control...");
+
+    var enabled =
+        await client.ManualFlowControlEnableAsync(true);
+
+    Console.WriteLine(
+        enabled
+            ? "Manual Flow Control enabled."
+            : "ManualFlowControlEnable(true) returned false.");
+
+    if (!enabled)
+        return;
+
+    var state =
+        await client.ManualFlowControlIsEnabledAsync();
+
+    Console.WriteLine(
+        $"ManualFlowControlIsEnabled = {state}");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Now go into TMNF and finish the round.");
+
+    Console.WriteLine(
+        "The game should stop at a transition instead of immediately continuing.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "When it is visibly waiting, come back here and press Enter.");
 
     Console.ReadLine();
 
-    Console.WriteLine(
-        $"Choosing {TargetMap} as the next map...");
-
-    var chosen =
-        await client.ChooseNextChallengeAsync(TargetMap);
-
-    if (!chosen)
-    {
-        Console.WriteLine(
-            "ChooseNextChallenge returned false.");
-
-        return;
-    }
-
-    Console.WriteLine(
-        "Map chosen successfully.");
-
-    Console.WriteLine(
-        "Sending NextChallenge...");
-
-    var switched =
-        await client.NextChallengeAsync();
-
-    if (!switched)
-    {
-        Console.WriteLine(
-            "NextChallenge returned false.");
-
-        return;
-    }
-
-    Console.WriteLine(
-        "NextChallenge accepted by server.");
-
-    Console.WriteLine(
-        "Waiting briefly for the server to finish loading...");
-
-    await Task.Delay(2000);
-
-    var afterSwitch =
-        await client.GetCurrentChallengeInfoAsync();
+    var transition =
+        await client.ManualFlowControlGetCurTransitionAsync();
 
     Console.WriteLine();
-    Console.WriteLine("CURRENT MAP AFTER SWITCH");
-    Console.WriteLine($"Name: {afterSwitch.Name}");
-    Console.WriteLine($"UID:  {afterSwitch.UId}");
-    Console.WriteLine($"File: {afterSwitch.FileName}");
+    Console.WriteLine(
+        $"Blocked transition: '{transition}'");
+
+    if (string.IsNullOrWhiteSpace(transition))
+    {
+        Console.WriteLine();
+        Console.WriteLine(
+            "No blocked transition is currently reported.");
+
+        Console.WriteLine(
+            "Press Enter to disable manual flow control and quit.");
+
+        Console.ReadLine();
+
+        await client.ManualFlowControlEnableAsync(false);
+        return;
+    }
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Press Enter to call ManualFlowControlProceed().");
+
+    Console.ReadLine();
+
+    var proceeded =
+        await client.ManualFlowControlProceedAsync();
+
+    Console.WriteLine(
+        proceeded
+            ? "Proceed accepted. Watch TMNF continue."
+            : "ManualFlowControlProceed returned false.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Press Enter when you're done observing.");
+
+    Console.ReadLine();
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Disabling Manual Flow Control before exit...");
+
+    var disabled =
+        await client.ManualFlowControlEnableAsync(false);
+
+    Console.WriteLine(
+        disabled
+            ? "Manual Flow Control disabled."
+            : "ManualFlowControlEnable(false) returned false.");
 }
 catch (Exception ex)
 {

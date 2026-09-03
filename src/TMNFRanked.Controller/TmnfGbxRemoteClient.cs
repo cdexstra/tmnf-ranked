@@ -51,89 +51,57 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         return ReadBooleanResult(response);
     }
 
-    public async Task<TmnfChallengeInfo> GetCurrentChallengeInfoAsync()
-    {
-        var response = await CallAsync("GetCurrentChallengeInfo");
-
-        var structElement = response.Descendants("struct").FirstOrDefault()
-            ?? throw new InvalidOperationException(
-                "GetCurrentChallengeInfo returned no struct.");
-
-        return ParseChallengeInfo(structElement);
-    }
-
-    public async Task<List<TmnfChallengeInfo>> GetChallengeListAsync()
+    public async Task<bool> EnableCallbacksAsync(bool enabled)
     {
         var response = await CallAsync(
-            "GetChallengeList",
-            XmlRpcInt(1000),
-            XmlRpcInt(0));
-
-        var result = new List<TmnfChallengeInfo>();
-
-        foreach (var structElement in response.Descendants("struct"))
-        {
-            result.Add(ParseChallengeInfo(structElement));
-        }
-
-        return result;
-    }
-
-    public async Task<bool> AddChallengeAsync(string fileName)
-    {
-        var response = await CallAsync(
-            "AddChallenge",
-            XmlRpcString(fileName));
+            "EnableCallbacks",
+            XmlRpcBoolean(enabled));
 
         return ReadBooleanResult(response);
     }
 
-    public async Task<bool> ChooseNextChallengeAsync(string fileName)
+    public async Task<bool> SetChatTimeAsync(int milliseconds)
     {
         var response = await CallAsync(
-            "ChooseNextChallenge",
-            XmlRpcString(fileName));
+            "SetChatTime",
+            XmlRpcInt(milliseconds));
 
         return ReadBooleanResult(response);
     }
 
-    public async Task<bool> NextChallengeAsync()
-    {
-        var response = await CallAsync("NextChallenge");
-        return ReadBooleanResult(response);
-    }
-
-    public async Task<bool> RestartChallengeAsync()
-    {
-        var response = await CallAsync("RestartChallenge");
-        return ReadBooleanResult(response);
-    }
-
-    public async Task<List<TmnfPlayerInfo>> GetPlayerListAsync()
+    public async Task<bool> ManualFlowControlEnableAsync(bool enabled)
     {
         var response = await CallAsync(
-            "GetPlayerList",
-            XmlRpcInt(100),
-            XmlRpcInt(0));
+            "ManualFlowControlEnable",
+            XmlRpcBoolean(enabled));
 
-        var players = new List<TmnfPlayerInfo>();
+        return ReadBooleanResult(response);
+    }
 
-        foreach (var structElement in response.Descendants("struct"))
-        {
-            var values = ReadStruct(structElement);
+    public async Task<int> ManualFlowControlIsEnabledAsync()
+    {
+        var response = await CallAsync("ManualFlowControlIsEnabled");
 
-            var login = ReadString(values, "Login");
-            if (string.IsNullOrWhiteSpace(login))
-                continue;
+        var intValue =
+            response.Descendants("int").FirstOrDefault()?.Value ??
+            response.Descendants("i4").FirstOrDefault()?.Value;
 
-            players.Add(
-                new TmnfPlayerInfo(
-                    Login: login,
-                    NickName: ReadString(values, "NickName") ?? "",
-                    PlayerId: ReadInt(values, "PlayerId")));
-        }
+        return int.TryParse(intValue, out var parsed)
+            ? parsed
+            : -1;
+    }
 
-        return players;
+    public async Task<string> ManualFlowControlGetCurTransitionAsync()
+    {
+        var response = await CallAsync("ManualFlowControlGetCurTransition");
+
+        return response.Descendants("string").FirstOrDefault()?.Value ?? "";
+    }
+
+    public async Task<bool> ManualFlowControlProceedAsync()
+    {
+        var response = await CallAsync("ManualFlowControlProceed");
+        return ReadBooleanResult(response);
     }
 
     public async Task<XDocument> CallAsync(
@@ -155,8 +123,11 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
                                 "param",
                                 new XElement("value", parameter))))));
 
-        var xmlText = xml.ToString(SaveOptions.DisableFormatting);
-        var xmlBytes = Encoding.UTF8.GetBytes(xmlText);
+        var xmlText =
+            xml.ToString(SaveOptions.DisableFormatting);
+
+        var xmlBytes =
+            Encoding.UTF8.GetBytes(xmlText);
 
         _requestHandle++;
 
@@ -198,16 +169,19 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
 
             if (_protocolVersion == 1)
             {
-                var header = await ReadExactAsync(4);
+                var header =
+                    await ReadExactAsync(4);
 
                 responseSize =
                     BinaryPrimitives.ReadUInt32LittleEndian(header);
 
-                responseHandle = _requestHandle;
+                responseHandle =
+                    _requestHandle;
             }
             else
             {
-                var header = await ReadExactAsync(8);
+                var header =
+                    await ReadExactAsync(8);
 
                 responseSize =
                     BinaryPrimitives.ReadUInt32LittleEndian(
@@ -219,7 +193,8 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             }
 
             if (responseSize == 0)
-                throw new IOException("Server returned an empty packet.");
+                throw new IOException(
+                    "Server returned an empty packet.");
 
             if (responseSize > 4 * 1024 * 1024)
                 throw new IOException(
@@ -231,7 +206,9 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             var responseXml =
                 Encoding.UTF8.GetString(responseBytes);
 
-            // Ignore callbacks that arrive while waiting for this RPC response.
+            // GbxRemote 2 callbacks have the high bit clear.
+            // For this manual test we do not need to process them yet,
+            // so simply consume and skip them while waiting for RPC replies.
             if (_protocolVersion == 2 &&
                 (responseHandle & 0x80000000) == 0)
             {
@@ -241,9 +218,11 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             if (responseHandle != _requestHandle)
                 continue;
 
-            var document = XDocument.Parse(responseXml);
+            var document =
+                XDocument.Parse(responseXml);
 
-            var fault = document.Descendants("fault").FirstOrDefault();
+            var fault =
+                document.Descendants("fault").FirstOrDefault();
 
             if (fault is not null)
                 throw new InvalidOperationException(
@@ -253,14 +232,21 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         }
     }
 
-    public static XElement XmlRpcString(string value)
-    {
-        return new XElement("string", value);
-    }
-
     public static XElement XmlRpcInt(int value)
     {
         return new XElement("int", value);
+    }
+
+    public static XElement XmlRpcBoolean(bool value)
+    {
+        return new XElement(
+            "boolean",
+            value ? "1" : "0");
+    }
+
+    public static XElement XmlRpcString(string value)
+    {
+        return new XElement("string", value);
     }
 
     private static bool ReadBooleanResult(XDocument document)
@@ -269,115 +255,9 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             document.Descendants("boolean").FirstOrDefault()?.Value;
 
         return value == "1" ||
-               value?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
-    }
-
-    private static TmnfChallengeInfo ParseChallengeInfo(XElement structElement)
-    {
-        var values = ReadStruct(structElement);
-
-        return new TmnfChallengeInfo(
-            Name: ReadString(values, "Name") ?? "",
-            UId: ReadString(values, "UId") ?? "",
-            FileName: ReadString(values, "FileName") ?? "",
-            Author: ReadString(values, "Author") ?? "",
-            Environnement: ReadString(values, "Environnement") ?? "",
-            GoldTime: ReadInt(values, "GoldTime"),
-            SilverTime: ReadInt(values, "SilverTime"),
-            BronzeTime: ReadInt(values, "BronzeTime"),
-            AuthorTime: ReadInt(values, "AuthorTime"));
-    }
-
-    private static Dictionary<string, object?> ReadStruct(XElement structElement)
-    {
-        var result =
-            new Dictionary<string, object?>(StringComparer.Ordinal);
-
-        foreach (var member in structElement.Elements("member"))
-        {
-            var name = member.Element("name")?.Value;
-            if (string.IsNullOrWhiteSpace(name))
-                continue;
-
-            result[name] =
-                ReadXmlRpcValue(member.Element("value"));
-        }
-
-        return result;
-    }
-
-    private static string? ReadString(
-        IReadOnlyDictionary<string, object?> values,
-        string key)
-    {
-        return values.TryGetValue(key, out var value)
-            ? value?.ToString()
-            : null;
-    }
-
-    private static int? ReadInt(
-        IReadOnlyDictionary<string, object?> values,
-        string key)
-    {
-        if (!values.TryGetValue(key, out var value) || value is null)
-            return null;
-
-        if (value is int number)
-            return number;
-
-        return int.TryParse(value.ToString(), out var parsed)
-            ? parsed
-            : null;
-    }
-
-    private static object? ReadXmlRpcValue(XElement? value)
-    {
-        if (value is null)
-            return null;
-
-        if (!value.HasElements)
-            return value.Value;
-
-        var child = value.Elements().FirstOrDefault();
-
-        if (child is null)
-            return value.Value;
-
-        return child.Name.LocalName switch
-        {
-            "string" => child.Value,
-
-            "int" or "i4" =>
-                int.TryParse(child.Value, out var intValue)
-                    ? intValue
-                    : child.Value,
-
-            "boolean" =>
-                child.Value == "1" ||
-                child.Value.Equals(
-                    "true",
-                    StringComparison.OrdinalIgnoreCase),
-
-            "double" =>
-                double.TryParse(
-                    child.Value,
-                    System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out var doubleValue)
-                    ? doubleValue
-                    : child.Value,
-
-            "struct" => ReadStruct(child),
-
-            "array" =>
-                child.Element("data")?
-                    .Elements("value")
-                    .Select(ReadXmlRpcValue)
-                    .ToList()
-                ?? new List<object?>(),
-
-            _ => child.Value
-        };
+               value?.Equals(
+                   "true",
+                   StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private async Task<byte[]> ReadExactAsync(
@@ -386,18 +266,23 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
     {
         EnsureConnected();
 
-        var buffer = new byte[count];
+        var buffer =
+            new byte[count];
+
         var offset = 0;
 
         while (offset < count)
         {
             var read =
                 await _stream!.ReadAsync(
-                    buffer.AsMemory(offset, count - offset),
+                    buffer.AsMemory(
+                        offset,
+                        count - offset),
                     cancellationToken);
 
             if (read == 0)
-                throw new IOException("Connection closed by server.");
+                throw new IOException(
+                    "Connection closed by server.");
 
             offset += read;
         }
@@ -420,19 +305,3 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         _tcpClient?.Dispose();
     }
 }
-
-public sealed record TmnfPlayerInfo(
-    string Login,
-    string NickName,
-    int? PlayerId);
-
-public sealed record TmnfChallengeInfo(
-    string Name,
-    string UId,
-    string FileName,
-    string Author,
-    string Environnement,
-    int? GoldTime,
-    int? SilverTime,
-    int? BronzeTime,
-    int? AuthorTime);
