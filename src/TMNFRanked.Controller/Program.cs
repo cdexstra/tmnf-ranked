@@ -1,148 +1,138 @@
 ﻿using TMNFRanked.Controller;
 
 Console.WriteLine("TMNF Ranked Controller");
-Console.WriteLine("Manual Flow Control test v2");
+Console.WriteLine("GbxRemote read-loop foundation test");
 Console.WriteLine();
 
 try
 {
-    await using var client =
-        new TmnfGbxRemoteClient();
+    await using var client = new TmnfGbxRemoteClient();
 
-    await client.ConnectAsync(
-        "127.0.0.1",
-        5000);
+    client.CallbackReceived += (_, callback) =>
+    {
+        Console.WriteLine(
+            $"[CALLBACK] {callback.MethodName}" +
+            FormatParameters(callback.Parameters));
+    };
+
+    client.ConnectionFaulted += (_, exception) =>
+    {
+        Console.WriteLine();
+        Console.WriteLine($"[CONNECTION FAULT] {exception.Message}");
+    };
+
+    await client.ConnectAsync("127.0.0.1", 5000);
 
     var authenticated =
-        await client.AuthenticateAsync(
-            "SuperAdmin",
-            "SuperAdmin");
+        await client.AuthenticateAsync("SuperAdmin", "SuperAdmin");
 
     if (!authenticated)
     {
-        Console.WriteLine(
-            "Authentication failed.");
-
+        Console.WriteLine("Authentication failed.");
         return;
     }
 
-    Console.WriteLine(
-        "Authentication succeeded.");
-
-    Console.WriteLine();
-    Console.WriteLine(
-        "Enabling callbacks...");
+    Console.WriteLine("Authentication succeeded.");
 
     var callbacksEnabled =
         await client.EnableCallbacksAsync(true);
 
-    Console.WriteLine(
-        callbacksEnabled
-            ? "Callbacks enabled."
-            : "EnableCallbacks(true) returned false.");
-
     if (!callbacksEnabled)
-        return;
-
-    Console.WriteLine();
-    Console.WriteLine(
-        "Setting ChatTime to 0...");
-
-    var chatTimeChanged =
-        await client.SetChatTimeAsync(0);
-
-    Console.WriteLine(
-        chatTimeChanged
-            ? "SetChatTime(0) accepted."
-            : "SetChatTime(0) returned false.");
-
-    Console.WriteLine();
-    Console.WriteLine(
-        "Enabling Manual Flow Control...");
-
-    var enabled =
-        await client.ManualFlowControlEnableAsync(true);
-
-    Console.WriteLine(
-        enabled
-            ? "Manual Flow Control enabled."
-            : "ManualFlowControlEnable(true) returned false.");
-
-    if (!enabled)
-        return;
-
-    var state =
-        await client.ManualFlowControlIsEnabledAsync();
-
-    Console.WriteLine(
-        $"ManualFlowControlIsEnabled = {state}");
-
-    Console.WriteLine();
-    Console.WriteLine(
-        "Now go into TMNF and finish the round.");
-
-    Console.WriteLine(
-        "The game should stop at a transition instead of immediately continuing.");
-
-    Console.WriteLine();
-    Console.WriteLine(
-        "When it is visibly waiting, come back here and press Enter.");
-
-    Console.ReadLine();
-
-    var transition =
-        await client.ManualFlowControlGetCurTransitionAsync();
-
-    Console.WriteLine();
-    Console.WriteLine(
-        $"Blocked transition: '{transition}'");
-
-    if (string.IsNullOrWhiteSpace(transition))
     {
-        Console.WriteLine();
-        Console.WriteLine(
-            "No blocked transition is currently reported.");
-
-        Console.WriteLine(
-            "Press Enter to disable manual flow control and quit.");
-
-        Console.ReadLine();
-
-        await client.ManualFlowControlEnableAsync(false);
+        Console.WriteLine("EnableCallbacks(true) returned false.");
         return;
     }
 
-    Console.WriteLine();
-    Console.WriteLine(
-        "Press Enter to call ManualFlowControlProceed().");
+    Console.WriteLine("Callbacks enabled.");
 
-    Console.ReadLine();
-
-    var proceeded =
-        await client.ManualFlowControlProceedAsync();
-
-    Console.WriteLine(
-        proceeded
-            ? "Proceed accepted. Watch TMNF continue."
-            : "ManualFlowControlProceed returned false.");
+    var map =
+        await client.GetCurrentChallengeInfoAsync();
 
     Console.WriteLine();
-    Console.WriteLine(
-        "Press Enter when you're done observing.");
+    Console.WriteLine($"Current map: {map.Name}");
+    Console.WriteLine($"UID:         {map.UId}");
+    Console.WriteLine($"File:        {map.FileName}");
 
-    Console.ReadLine();
+    var players =
+        await client.GetPlayerListAsync();
 
     Console.WriteLine();
-    Console.WriteLine(
-        "Disabling Manual Flow Control before exit...");
+    Console.WriteLine($"Players currently on server: {players.Count}");
 
-    var disabled =
-        await client.ManualFlowControlEnableAsync(false);
+    foreach (var player in players)
+    {
+        Console.WriteLine(
+            $"- {player.Login} | {player.NickName} | ID {player.PlayerId}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Permanent read loop active.");
+    Console.WriteLine("Drive / finish runs in TMNF and callbacks should print live.");
+    Console.WriteLine();
+    Console.WriteLine("Controls:");
+    Console.WriteLine("  Enter = issue TWO simultaneous RPC calls");
+    Console.WriteLine("  R     = restart current challenge");
+    Console.WriteLine("  Q     = quit");
+
+    while (true)
+    {
+        var key =
+            Console.ReadKey(intercept: true);
+
+        if (key.Key == ConsoleKey.Q)
+            break;
+
+        if (key.Key == ConsoleKey.R)
+        {
+            Console.WriteLine();
+            Console.WriteLine("[RPC TEST] RestartChallenge...");
+
+            var restarted =
+                await client.RestartChallengeAsync();
+
+            Console.WriteLine(
+                $"[RPC TEST] RestartChallenge returned {restarted}.");
+
+            continue;
+        }
+
+        if (key.Key == ConsoleKey.Enter)
+        {
+            Console.WriteLine();
+            Console.WriteLine(
+                "[RPC TEST] Sending map + player-list calls together while callbacks stay active...");
+
+            var mapTask =
+                client.GetCurrentChallengeInfoAsync();
+
+            var playersTask =
+                client.GetPlayerListAsync();
+
+            await Task.WhenAll(
+                mapTask,
+                playersTask);
+
+            var currentMap =
+                await mapTask;
+
+            var currentPlayers =
+                await playersTask;
+
+            Console.WriteLine(
+                $"[RPC TEST] OK - {currentMap.Name}, {currentPlayers.Count} player(s).");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Disabling callbacks...");
+
+    var callbacksDisabled =
+        await client.EnableCallbacksAsync(false);
 
     Console.WriteLine(
-        disabled
-            ? "Manual Flow Control disabled."
-            : "ManualFlowControlEnable(false) returned false.");
+        callbacksDisabled
+            ? "Callbacks disabled."
+            : "EnableCallbacks(false) returned false.");
 }
 catch (Exception ex)
 {
@@ -153,3 +143,42 @@ catch (Exception ex)
 
 Console.WriteLine();
 Console.WriteLine("Controller stopped.");
+
+static string FormatParameters(IReadOnlyList<object?> parameters)
+{
+    if (parameters.Count == 0)
+        return "";
+
+    return " | " +
+        string.Join(
+            " | ",
+            parameters.Select(FormatValue));
+}
+
+static string FormatValue(object? value)
+{
+    if (value is null)
+        return "null";
+
+    if (value is IReadOnlyDictionary<string, object?> dictionary)
+    {
+        return "{" +
+            string.Join(
+                ", ",
+                dictionary.Select(
+                    pair => $"{pair.Key}={FormatValue(pair.Value)}")) +
+            "}";
+    }
+
+    if (value is IEnumerable<object?> list &&
+        value is not string)
+    {
+        return "[" +
+            string.Join(
+                ", ",
+                list.Select(FormatValue)) +
+            "]";
+    }
+
+    return value.ToString() ?? "";
+}
