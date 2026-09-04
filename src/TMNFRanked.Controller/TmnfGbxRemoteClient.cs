@@ -24,7 +24,10 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
     public event EventHandler<TmnfGbxCallback>? CallbackReceived;
     public event EventHandler<Exception>? ConnectionFaulted;
 
-    public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default)
+    public async Task ConnectAsync(
+        string host,
+        int port,
+        CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
 
@@ -35,14 +38,24 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         await _tcpClient.ConnectAsync(host, port, cancellationToken);
         _stream = _tcpClient.GetStream();
 
-        var handshakeLengthBytes = await ReadExactAsync(_stream, 4, cancellationToken);
-        var handshakeLength = BinaryPrimitives.ReadUInt32LittleEndian(handshakeLengthBytes);
+        var handshakeLengthBytes =
+            await ReadExactAsync(_stream, 4, cancellationToken);
+
+        var handshakeLength =
+            BinaryPrimitives.ReadUInt32LittleEndian(handshakeLengthBytes);
 
         if (handshakeLength == 0 || handshakeLength > 64)
-            throw new InvalidOperationException($"Invalid GbxRemote handshake length: {handshakeLength}");
+            throw new InvalidOperationException(
+                $"Invalid GbxRemote handshake length: {handshakeLength}");
 
-        var handshakeBytes = await ReadExactAsync(_stream, checked((int)handshakeLength), cancellationToken);
-        var handshake = Encoding.ASCII.GetString(handshakeBytes);
+        var handshakeBytes =
+            await ReadExactAsync(
+                _stream,
+                checked((int)handshakeLength),
+                cancellationToken);
+
+        var handshake =
+            Encoding.ASCII.GetString(handshakeBytes);
 
         Console.WriteLine($"Handshake: {handshake}");
 
@@ -51,7 +64,9 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
                 $"TMNF Ranked currently requires GBXRemote 2. Server returned '{handshake}'.");
 
         _readLoopCts = new CancellationTokenSource();
-        _readLoopTask = Task.Run(() => ReadLoopAsync(_readLoopCts.Token), CancellationToken.None);
+        _readLoopTask = Task.Run(
+            () => ReadLoopAsync(_readLoopCts.Token),
+            CancellationToken.None);
     }
 
     public async Task<bool> AuthenticateAsync(
@@ -83,10 +98,14 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
     public async Task<TmnfChallengeInfo> GetCurrentChallengeInfoAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await CallAsync("GetCurrentChallengeInfo", cancellationToken);
+        var response = await CallAsync(
+            "GetCurrentChallengeInfo",
+            cancellationToken);
 
-        var structElement = response.Descendants("struct").FirstOrDefault()
-            ?? throw new InvalidOperationException("GetCurrentChallengeInfo returned no struct.");
+        var structElement =
+            response.Descendants("struct").FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "GetCurrentChallengeInfo returned no struct.");
 
         var values = ReadStruct(structElement);
 
@@ -131,7 +150,10 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
     public async Task<bool> RestartChallengeAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await CallAsync("RestartChallenge", cancellationToken);
+        var response = await CallAsync(
+            "RestartChallenge",
+            cancellationToken);
+
         return ReadBooleanResult(response);
     }
 
@@ -162,26 +184,62 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
     public async Task<int> ManualFlowControlIsEnabledAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await CallAsync("ManualFlowControlIsEnabled", cancellationToken);
+        var response = await CallAsync(
+            "ManualFlowControlIsEnabled",
+            cancellationToken);
 
         var value =
             response.Descendants("int").FirstOrDefault()?.Value ??
             response.Descendants("i4").FirstOrDefault()?.Value;
 
-        return int.TryParse(value, out var parsed) ? parsed : -1;
+        return int.TryParse(value, out var parsed)
+            ? parsed
+            : -1;
     }
 
     public async Task<string> ManualFlowControlGetCurTransitionAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await CallAsync("ManualFlowControlGetCurTransition", cancellationToken);
+        var response = await CallAsync(
+            "ManualFlowControlGetCurTransition",
+            cancellationToken);
+
         return response.Descendants("string").FirstOrDefault()?.Value ?? "";
     }
 
     public async Task<bool> ManualFlowControlProceedAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await CallAsync("ManualFlowControlProceed", cancellationToken);
+        var response = await CallAsync(
+            "ManualFlowControlProceed",
+            cancellationToken);
+
+        return ReadBooleanResult(response);
+    }
+
+    public async Task<bool> SendDisplayManialinkPageAsync(
+        string xml,
+        int timeoutMilliseconds = 0,
+        bool hideOnClick = false,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await CallAsync(
+            "SendDisplayManialinkPage",
+            cancellationToken,
+            XmlRpcString(xml),
+            XmlRpcInt(timeoutMilliseconds),
+            XmlRpcBoolean(hideOnClick));
+
+        return ReadBooleanResult(response);
+    }
+
+    public async Task<bool> SendHideManialinkPageAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var response = await CallAsync(
+            "SendHideManialinkPage",
+            cancellationToken);
+
         return ReadBooleanResult(response);
     }
 
@@ -195,27 +253,39 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
 
         var requestHandle = GetNextRequestHandle();
 
-        var completion = new TaskCompletionSource<XDocument>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion =
+            new TaskCompletionSource<XDocument>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
 
         if (!_pendingCalls.TryAdd(requestHandle, completion))
-            throw new InvalidOperationException($"Duplicate request handle 0x{requestHandle:X8}.");
+            throw new InvalidOperationException(
+                $"Duplicate request handle 0x{requestHandle:X8}.");
 
-        using var cancellationRegistration = cancellationToken.Register(() =>
-        {
-            if (_pendingCalls.TryRemove(requestHandle, out var pending))
-                pending.TrySetCanceled(cancellationToken);
-        });
+        using var cancellationRegistration =
+            cancellationToken.Register(() =>
+            {
+                if (_pendingCalls.TryRemove(
+                    requestHandle,
+                    out var pending))
+                {
+                    pending.TrySetCanceled(cancellationToken);
+                }
+            });
 
         try
         {
             var xml = BuildMethodCall(methodName, parameters);
-            var xmlBytes = Encoding.UTF8.GetBytes(xml.ToString(SaveOptions.DisableFormatting));
+
+            var xmlBytes =
+                Encoding.UTF8.GetBytes(
+                    xml.ToString(SaveOptions.DisableFormatting));
 
             if (xmlBytes.Length > MaxPacketSize)
-                throw new InvalidOperationException($"RPC request too large: {xmlBytes.Length} bytes.");
+                throw new InvalidOperationException(
+                    $"RPC request too large: {xmlBytes.Length} bytes.");
 
-            var packet = new byte[8 + xmlBytes.Length];
+            var packet =
+                new byte[8 + xmlBytes.Length];
 
             BinaryPrimitives.WriteUInt32LittleEndian(
                 packet.AsSpan(0, 4),
@@ -232,7 +302,11 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             try
             {
                 EnsureConnected();
-                await _stream!.WriteAsync(packet, cancellationToken);
+
+                await _stream!.WriteAsync(
+                    packet,
+                    cancellationToken);
+
                 await _stream.FlushAsync(cancellationToken);
             }
             finally
@@ -249,38 +323,60 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         }
     }
 
-    private async Task ReadLoopAsync(CancellationToken cancellationToken)
+    private async Task ReadLoopAsync(
+        CancellationToken cancellationToken)
     {
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var header = await ReadExactAsync(_stream!, 8, cancellationToken);
+                var header =
+                    await ReadExactAsync(
+                        _stream!,
+                        8,
+                        cancellationToken);
 
-                var packetSize = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0, 4));
-                var handle = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(4, 4));
+                var packetSize =
+                    BinaryPrimitives.ReadUInt32LittleEndian(
+                        header.AsSpan(0, 4));
+
+                var handle =
+                    BinaryPrimitives.ReadUInt32LittleEndian(
+                        header.AsSpan(4, 4));
 
                 if (packetSize == 0)
-                    throw new IOException("Server returned an empty GbxRemote packet.");
+                    throw new IOException(
+                        "Server returned an empty GbxRemote packet.");
 
                 if (packetSize > MaxPacketSize)
-                    throw new IOException($"Server packet too large: {packetSize} bytes.");
+                    throw new IOException(
+                        $"Server packet too large: {packetSize} bytes.");
 
-                var payload = await ReadExactAsync(
-                    _stream!,
-                    checked((int)packetSize),
-                    cancellationToken);
+                var payload =
+                    await ReadExactAsync(
+                        _stream!,
+                        checked((int)packetSize),
+                        cancellationToken);
 
-                var rawXml = Encoding.UTF8.GetString(payload);
-                var document = XDocument.Parse(rawXml);
+                var rawXml =
+                    Encoding.UTF8.GetString(payload);
+
+                var document =
+                    XDocument.Parse(rawXml);
 
                 if ((handle & 0x80000000) != 0)
-                    RouteRpcResponse(handle, document, rawXml);
+                    RouteRpcResponse(
+                        handle,
+                        document,
+                        rawXml);
                 else
-                    DispatchCallback(handle, document);
+                    DispatchCallback(
+                        handle,
+                        document);
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
         {
             // Normal shutdown.
         }
@@ -294,27 +390,38 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             }
             catch
             {
-                // Consumer event handlers cannot be allowed to break cleanup.
+                // Consumer event handlers must not break cleanup.
             }
         }
     }
 
-    private void RouteRpcResponse(uint handle, XDocument document, string rawXml)
+    private void RouteRpcResponse(
+        uint handle,
+        XDocument document,
+        string rawXml)
     {
-        if (!_pendingCalls.TryRemove(handle, out var completion))
+        if (!_pendingCalls.TryRemove(
+            handle,
+            out var completion))
+        {
             return;
+        }
 
         if (document.Descendants("fault").Any())
         {
             completion.TrySetException(
-                new InvalidOperationException($"XML-RPC fault: {rawXml}"));
+                new InvalidOperationException(
+                    $"XML-RPC fault: {rawXml}"));
+
             return;
         }
 
         completion.TrySetResult(document);
     }
 
-    private void DispatchCallback(uint handle, XDocument document)
+    private void DispatchCallback(
+        uint handle,
+        XDocument document)
     {
         var methodName =
             document.Root?.Element("methodName")?.Value
@@ -324,19 +431,25 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             document.Root?
                 .Element("params")?
                 .Elements("param")
-                .Select(param => ReadXmlRpcValue(param.Element("value")))
+                .Select(
+                    param =>
+                        ReadXmlRpcValue(
+                            param.Element("value")))
                 .ToArray()
             ?? Array.Empty<object?>();
 
-        var callback = new TmnfGbxCallback(
-            Handle: handle,
-            MethodName: methodName,
-            Parameters: parameters,
-            RawXml: document);
+        var callback =
+            new TmnfGbxCallback(
+                Handle: handle,
+                MethodName: methodName,
+                Parameters: parameters,
+                RawXml: document);
 
         try
         {
-            CallbackReceived?.Invoke(this, callback);
+            CallbackReceived?.Invoke(
+                this,
+                callback);
         }
         catch (Exception ex)
         {
@@ -363,10 +476,15 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         IReadOnlyCollection<XElement> parameters)
     {
         return new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
+            new XDeclaration(
+                "1.0",
+                "utf-8",
+                null),
             new XElement(
                 "methodCall",
-                new XElement("methodName", methodName),
+                new XElement(
+                    "methodName",
+                    methodName),
                 new XElement(
                     "params",
                     parameters.Select(
@@ -378,35 +496,50 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
                                     new XElement(parameter)))))));
     }
 
-    private static bool ReadBooleanResult(XDocument document)
+    private static bool ReadBooleanResult(
+        XDocument document)
     {
-        var value = document.Descendants("boolean").FirstOrDefault()?.Value;
+        var value =
+            document.Descendants("boolean")
+                .FirstOrDefault()?
+                .Value;
 
         return value == "1" ||
-               value?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+               value?.Equals(
+                   "true",
+                   StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    public static XElement XmlRpcString(string value) =>
+    public static XElement XmlRpcString(
+        string value) =>
         new("string", value);
 
-    public static XElement XmlRpcInt(int value) =>
+    public static XElement XmlRpcInt(
+        int value) =>
         new("int", value);
 
-    public static XElement XmlRpcBoolean(bool value) =>
+    public static XElement XmlRpcBoolean(
+        bool value) =>
         new("boolean", value ? "1" : "0");
 
-    private static Dictionary<string, object?> ReadStruct(XElement structElement)
+    private static Dictionary<string, object?> ReadStruct(
+        XElement structElement)
     {
-        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var result =
+            new Dictionary<string, object?>(
+                StringComparer.Ordinal);
 
         foreach (var member in structElement.Elements("member"))
         {
-            var name = member.Element("name")?.Value;
+            var name =
+                member.Element("name")?.Value;
 
             if (string.IsNullOrWhiteSpace(name))
                 continue;
 
-            result[name] = ReadXmlRpcValue(member.Element("value"));
+            result[name] =
+                ReadXmlRpcValue(
+                    member.Element("value"));
         }
 
         return result;
@@ -416,7 +549,9 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         IReadOnlyDictionary<string, object?> values,
         string key)
     {
-        return values.TryGetValue(key, out var value)
+        return values.TryGetValue(
+            key,
+            out var value)
             ? value?.ToString()
             : null;
     }
@@ -425,18 +560,26 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         IReadOnlyDictionary<string, object?> values,
         string key)
     {
-        if (!values.TryGetValue(key, out var value) || value is null)
+        if (!values.TryGetValue(
+            key,
+            out var value) ||
+            value is null)
+        {
             return null;
+        }
 
         if (value is int number)
             return number;
 
-        return int.TryParse(value.ToString(), out var parsed)
+        return int.TryParse(
+            value.ToString(),
+            out var parsed)
             ? parsed
             : null;
     }
 
-    private static object? ReadXmlRpcValue(XElement? valueElement)
+    private static object? ReadXmlRpcValue(
+        XElement? valueElement)
     {
         if (valueElement is null)
             return null;
@@ -444,23 +587,29 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         if (!valueElement.HasElements)
             return valueElement.Value;
 
-        var child = valueElement.Elements().FirstOrDefault();
+        var child =
+            valueElement.Elements().FirstOrDefault();
 
         if (child is null)
             return valueElement.Value;
 
         return child.Name.LocalName switch
         {
-            "string" => child.Value,
+            "string" =>
+                child.Value,
 
             "int" or "i4" =>
-                int.TryParse(child.Value, out var integer)
+                int.TryParse(
+                    child.Value,
+                    out var integer)
                     ? integer
                     : child.Value,
 
             "boolean" =>
                 child.Value == "1" ||
-                child.Value.Equals("true", StringComparison.OrdinalIgnoreCase),
+                child.Value.Equals(
+                    "true",
+                    StringComparison.OrdinalIgnoreCase),
 
             "double" =>
                 double.TryParse(
@@ -471,7 +620,8 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
                     ? doubleValue
                     : child.Value,
 
-            "struct" => ReadStruct(child),
+            "struct" =>
+                ReadStruct(child),
 
             "array" =>
                 child.Element("data")?
@@ -480,7 +630,8 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
                     .ToList()
                 ?? new List<object?>(),
 
-            _ => child.Value
+            _ =>
+                child.Value
         };
     }
 
@@ -489,17 +640,23 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         int count,
         CancellationToken cancellationToken)
     {
-        var buffer = new byte[count];
+        var buffer =
+            new byte[count];
+
         var offset = 0;
 
         while (offset < count)
         {
-            var read = await stream.ReadAsync(
-                buffer.AsMemory(offset, count - offset),
-                cancellationToken);
+            var read =
+                await stream.ReadAsync(
+                    buffer.AsMemory(
+                        offset,
+                        count - offset),
+                    cancellationToken);
 
             if (read == 0)
-                throw new IOException("Connection closed by GbxRemote server.");
+                throw new IOException(
+                    "Connection closed by GbxRemote server.");
 
             offset += read;
         }
@@ -507,24 +664,32 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
         return buffer;
     }
 
-    private void FailAllPendingCalls(Exception exception)
+    private void FailAllPendingCalls(
+        Exception exception)
     {
         foreach (var pair in _pendingCalls.ToArray())
         {
-            if (_pendingCalls.TryRemove(pair.Key, out var completion))
+            if (_pendingCalls.TryRemove(
+                pair.Key,
+                out var completion))
+            {
                 completion.TrySetException(exception);
+            }
         }
     }
 
     private void EnsureConnected()
     {
         if (_stream is null)
-            throw new InvalidOperationException("Not connected to a GbxRemote server.");
+            throw new InvalidOperationException(
+                "Not connected to a GbxRemote server.");
     }
 
     private void ThrowIfDisposed()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(
+            _disposed,
+            this);
     }
 
     public async ValueTask DisposeAsync()
@@ -545,12 +710,13 @@ public sealed class TmnfGbxRemoteClient : IAsyncDisposable
             }
             catch
             {
-                // Any real read-loop failure was already surfaced.
+                // Real failures are surfaced elsewhere.
             }
         }
 
         FailAllPendingCalls(
-            new ObjectDisposedException(nameof(TmnfGbxRemoteClient)));
+            new ObjectDisposedException(
+                nameof(TmnfGbxRemoteClient)));
 
         if (_stream is not null)
         {

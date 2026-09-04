@@ -1,138 +1,150 @@
 ﻿using TMNFRanked.Controller;
 
 Console.WriteLine("TMNF Ranked Controller");
-Console.WriteLine("GbxRemote read-loop foundation test");
+Console.WriteLine("ManiaLink HUD test");
 Console.WriteLine();
+
+const string hudV1 = """
+<manialink id="49001">
+  <frame posn="0 43 1">
+    <quad posn="-35 0 0" sizen="70 8" bgcolor="000C"/>
+    <label posn="-31 -1.5 1" textsize="2" text="$fffheplest"/>
+    <label posn="-7 -1.5 1" textsize="2" text="$aaa● ○"/>
+    <label posn="-1.5 -1.5 1" textsize="2" text="$fff1 - 1"/>
+    <label posn="7 -1.5 1" textsize="2" text="$aaa○ ●"/>
+    <label posn="21 -1.5 1" textsize="2" text="$fffOPPONENT"/>
+    <label posn="-7 -5 1" textsize="1" text="$aaaMAP 1/3  •  A07-Race"/>
+  </frame>
+</manialink>
+""";
+
+const string hudV2 = """
+<manialink id="49001">
+  <frame posn="0 43 1">
+    <quad posn="-35 0 0" sizen="70 8" bgcolor="000C"/>
+    <label posn="-31 -1.5 1" textsize="2" text="$fffheplest"/>
+    <label posn="-7 -1.5 1" textsize="2" text="$aaa● ○"/>
+    <label posn="-1.5 -1.5 1" textsize="2" text="$fff2 - 1"/>
+    <label posn="7 -1.5 1" textsize="2" text="$aaa○ ●"/>
+    <label posn="21 -1.5 1" textsize="2" text="$fffOPPONENT"/>
+    <label posn="-10 -5 1" textsize="1" text="$0f0ROUND WON  +  MAP POINT"/>
+  </frame>
+</manialink>
+""";
 
 try
 {
-    await using var client = new TmnfGbxRemoteClient();
-
-    client.CallbackReceived += (_, callback) =>
-    {
-        Console.WriteLine(
-            $"[CALLBACK] {callback.MethodName}" +
-            FormatParameters(callback.Parameters));
-    };
+    await using var client =
+        new TmnfGbxRemoteClient();
 
     client.ConnectionFaulted += (_, exception) =>
     {
         Console.WriteLine();
-        Console.WriteLine($"[CONNECTION FAULT] {exception.Message}");
+        Console.WriteLine(
+            $"[CONNECTION FAULT] {exception.Message}");
     };
 
-    await client.ConnectAsync("127.0.0.1", 5000);
+    await client.ConnectAsync(
+        "127.0.0.1",
+        5000);
 
     var authenticated =
-        await client.AuthenticateAsync("SuperAdmin", "SuperAdmin");
+        await client.AuthenticateAsync(
+            "SuperAdmin",
+            "SuperAdmin");
 
     if (!authenticated)
     {
-        Console.WriteLine("Authentication failed.");
-        return;
-    }
-
-    Console.WriteLine("Authentication succeeded.");
-
-    var callbacksEnabled =
-        await client.EnableCallbacksAsync(true);
-
-    if (!callbacksEnabled)
-    {
-        Console.WriteLine("EnableCallbacks(true) returned false.");
-        return;
-    }
-
-    Console.WriteLine("Callbacks enabled.");
-
-    var map =
-        await client.GetCurrentChallengeInfoAsync();
-
-    Console.WriteLine();
-    Console.WriteLine($"Current map: {map.Name}");
-    Console.WriteLine($"UID:         {map.UId}");
-    Console.WriteLine($"File:        {map.FileName}");
-
-    var players =
-        await client.GetPlayerListAsync();
-
-    Console.WriteLine();
-    Console.WriteLine($"Players currently on server: {players.Count}");
-
-    foreach (var player in players)
-    {
         Console.WriteLine(
-            $"- {player.Login} | {player.NickName} | ID {player.PlayerId}");
+            "Authentication failed.");
+
+        return;
     }
-
-    Console.WriteLine();
-    Console.WriteLine("Permanent read loop active.");
-    Console.WriteLine("Drive / finish runs in TMNF and callbacks should print live.");
-    Console.WriteLine();
-    Console.WriteLine("Controls:");
-    Console.WriteLine("  Enter = issue TWO simultaneous RPC calls");
-    Console.WriteLine("  R     = restart current challenge");
-    Console.WriteLine("  Q     = quit");
-
-    while (true)
-    {
-        var key =
-            Console.ReadKey(intercept: true);
-
-        if (key.Key == ConsoleKey.Q)
-            break;
-
-        if (key.Key == ConsoleKey.R)
-        {
-            Console.WriteLine();
-            Console.WriteLine("[RPC TEST] RestartChallenge...");
-
-            var restarted =
-                await client.RestartChallengeAsync();
-
-            Console.WriteLine(
-                $"[RPC TEST] RestartChallenge returned {restarted}.");
-
-            continue;
-        }
-
-        if (key.Key == ConsoleKey.Enter)
-        {
-            Console.WriteLine();
-            Console.WriteLine(
-                "[RPC TEST] Sending map + player-list calls together while callbacks stay active...");
-
-            var mapTask =
-                client.GetCurrentChallengeInfoAsync();
-
-            var playersTask =
-                client.GetPlayerListAsync();
-
-            await Task.WhenAll(
-                mapTask,
-                playersTask);
-
-            var currentMap =
-                await mapTask;
-
-            var currentPlayers =
-                await playersTask;
-
-            Console.WriteLine(
-                $"[RPC TEST] OK - {currentMap.Name}, {currentPlayers.Count} player(s).");
-        }
-    }
-
-    Console.WriteLine();
-    Console.WriteLine("Disabling callbacks...");
-
-    var callbacksDisabled =
-        await client.EnableCallbacksAsync(false);
 
     Console.WriteLine(
-        callbacksDisabled
-            ? "Callbacks disabled."
-            : "EnableCallbacks(false) returned false.");
+        "Authentication succeeded.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Sending Ranked HUD v1...");
+
+    var shown =
+        await client.SendDisplayManialinkPageAsync(
+            hudV1,
+            timeoutMilliseconds: 0,
+            hideOnClick: false);
+
+    Console.WriteLine(
+        shown
+            ? "HUD v1 accepted by server."
+            : "HUD v1 returned false.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Look at TMNF now.");
+
+    Console.WriteLine(
+        "You should see a small Ranked bar near the top of the screen.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Press Enter to UPDATE the same HUD.");
+
+    Console.ReadLine();
+
+    var updated =
+        await client.SendDisplayManialinkPageAsync(
+            hudV2,
+            timeoutMilliseconds: 0,
+            hideOnClick: false);
+
+    Console.WriteLine(
+        updated
+            ? "HUD v2 accepted by server."
+            : "HUD v2 returned false.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "The score should now read 2 - 1 and show ROUND WON.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Press Enter to HIDE the HUD.");
+
+    Console.ReadLine();
+
+    var hidden =
+        await client.SendHideManialinkPageAsync();
+
+    Console.WriteLine(
+        hidden
+            ? "HUD hidden."
+            : "SendHideManialinkPage returned false.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Press Enter to send it again once more.");
+
+    Console.ReadLine();
+
+    var reshown =
+        await client.SendDisplayManialinkPageAsync(
+            hudV1,
+            timeoutMilliseconds: 0,
+            hideOnClick: false);
+
+    Console.WriteLine(
+        reshown
+            ? "HUD re-shown successfully."
+            : "HUD re-show returned false.");
+
+    Console.WriteLine();
+    Console.WriteLine(
+        "Press Enter to clean up and exit.");
+
+    Console.ReadLine();
+
+    await client.SendHideManialinkPageAsync();
 }
 catch (Exception ex)
 {
@@ -143,42 +155,3 @@ catch (Exception ex)
 
 Console.WriteLine();
 Console.WriteLine("Controller stopped.");
-
-static string FormatParameters(IReadOnlyList<object?> parameters)
-{
-    if (parameters.Count == 0)
-        return "";
-
-    return " | " +
-        string.Join(
-            " | ",
-            parameters.Select(FormatValue));
-}
-
-static string FormatValue(object? value)
-{
-    if (value is null)
-        return "null";
-
-    if (value is IReadOnlyDictionary<string, object?> dictionary)
-    {
-        return "{" +
-            string.Join(
-                ", ",
-                dictionary.Select(
-                    pair => $"{pair.Key}={FormatValue(pair.Value)}")) +
-            "}";
-    }
-
-    if (value is IEnumerable<object?> list &&
-        value is not string)
-    {
-        return "[" +
-            string.Join(
-                ", ",
-                list.Select(FormatValue)) +
-            "]";
-    }
-
-    return value.ToString() ?? "";
-}
