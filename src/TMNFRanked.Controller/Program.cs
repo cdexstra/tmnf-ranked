@@ -1,47 +1,27 @@
 ﻿using TMNFRanked.Controller;
 
 Console.WriteLine("TMNF Ranked Controller");
-Console.WriteLine("ManiaLink HUD test");
+Console.WriteLine("Typed match-event foundation test");
 Console.WriteLine();
-
-const string hudV1 = """
-<manialink id="49001">
-  <frame posn="0 43 1">
-    <quad posn="-35 0 0" sizen="70 8" bgcolor="000C"/>
-    <label posn="-31 -1.5 1" textsize="2" text="$fffheplest"/>
-    <label posn="-7 -1.5 1" textsize="2" text="$aaa● ○"/>
-    <label posn="-1.5 -1.5 1" textsize="2" text="$fff1 - 1"/>
-    <label posn="7 -1.5 1" textsize="2" text="$aaa○ ●"/>
-    <label posn="21 -1.5 1" textsize="2" text="$fffOPPONENT"/>
-    <label posn="-7 -5 1" textsize="1" text="$aaaMAP 1/3  •  A07-Race"/>
-  </frame>
-</manialink>
-""";
-
-const string hudV2 = """
-<manialink id="49001">
-  <frame posn="0 43 1">
-    <quad posn="-35 0 0" sizen="70 8" bgcolor="000C"/>
-    <label posn="-31 -1.5 1" textsize="2" text="$fffheplest"/>
-    <label posn="-7 -1.5 1" textsize="2" text="$aaa● ○"/>
-    <label posn="-1.5 -1.5 1" textsize="2" text="$fff2 - 1"/>
-    <label posn="7 -1.5 1" textsize="2" text="$aaa○ ●"/>
-    <label posn="21 -1.5 1" textsize="2" text="$fffOPPONENT"/>
-    <label posn="-10 -5 1" textsize="1" text="$0f0ROUND WON  +  MAP POINT"/>
-  </frame>
-</manialink>
-""";
 
 try
 {
     await using var client =
         new TmnfGbxRemoteClient();
 
+    using var translator =
+        new TmnfMatchEventTranslator(client);
+
     client.ConnectionFaulted += (_, exception) =>
     {
         Console.WriteLine();
         Console.WriteLine(
             $"[CONNECTION FAULT] {exception.Message}");
+    };
+
+    translator.MatchEventReceived += (_, matchEvent) =>
+    {
+        PrintMatchEvent(matchEvent);
     };
 
     await client.ConnectAsync(
@@ -64,87 +44,77 @@ try
     Console.WriteLine(
         "Authentication succeeded.");
 
-    Console.WriteLine();
-    Console.WriteLine(
-        "Sending Ranked HUD v1...");
+    var callbacksEnabled =
+        await client.EnableCallbacksAsync(true);
 
-    var shown =
-        await client.SendDisplayManialinkPageAsync(
-            hudV1,
-            timeoutMilliseconds: 0,
-            hideOnClick: false);
+    if (!callbacksEnabled)
+    {
+        Console.WriteLine(
+            "EnableCallbacks(true) returned false.");
 
-    Console.WriteLine(
-        shown
-            ? "HUD v1 accepted by server."
-            : "HUD v1 returned false.");
-
-    Console.WriteLine();
-    Console.WriteLine(
-        "Look at TMNF now.");
+        return;
+    }
 
     Console.WriteLine(
-        "You should see a small Ranked bar near the top of the screen.");
+        "Callbacks enabled.");
+
+    var players =
+        await client.GetPlayerListAsync();
 
     Console.WriteLine();
     Console.WriteLine(
-        "Press Enter to UPDATE the same HUD.");
+        $"Known real players: {players.Count}");
 
-    Console.ReadLine();
-
-    var updated =
-        await client.SendDisplayManialinkPageAsync(
-            hudV2,
-            timeoutMilliseconds: 0,
-            hideOnClick: false);
-
-    Console.WriteLine(
-        updated
-            ? "HUD v2 accepted by server."
-            : "HUD v2 returned false.");
+    foreach (var player in players)
+    {
+        Console.WriteLine(
+            $"- {player.Login} | ID {player.PlayerId}");
+    }
 
     Console.WriteLine();
     Console.WriteLine(
-        "The score should now read 2 - 1 and show ROUND WON.");
+        "Drive a run and finish it.");
+
+    Console.WriteLine(
+        "The console should now show CLEAN typed match events.");
 
     Console.WriteLine();
     Console.WriteLine(
-        "Press Enter to HIDE the HUD.");
-
-    Console.ReadLine();
-
-    var hidden =
-        await client.SendHideManialinkPageAsync();
-
+        "Important: the old fake UID=0 / unnamed_* finish callbacks");
     Console.WriteLine(
-        hidden
-            ? "HUD hidden."
-            : "SendHideManialinkPage returned false.");
+        "should NOT appear anymore.");
 
     Console.WriteLine();
     Console.WriteLine(
-        "Press Enter to send it again once more.");
-
-    Console.ReadLine();
-
-    var reshown =
-        await client.SendDisplayManialinkPageAsync(
-            hudV1,
-            timeoutMilliseconds: 0,
-            hideOnClick: false);
-
+        "Press Enter at any time to make a normal RPC call.");
     Console.WriteLine(
-        reshown
-            ? "HUD re-shown successfully."
-            : "HUD re-show returned false.");
+        "Press Q to quit.");
+
+    while (true)
+    {
+        var key =
+            Console.ReadKey(
+                intercept: true);
+
+        if (key.Key == ConsoleKey.Q)
+            break;
+
+        if (key.Key == ConsoleKey.Enter)
+        {
+            var map =
+                await client.GetCurrentChallengeInfoAsync();
+
+            Console.WriteLine();
+            Console.WriteLine(
+                $"[RPC] Current map = {map.Name}");
+        }
+    }
 
     Console.WriteLine();
     Console.WriteLine(
-        "Press Enter to clean up and exit.");
+        "Disabling callbacks...");
 
-    Console.ReadLine();
-
-    await client.SendHideManialinkPageAsync();
+    await client.EnableCallbacksAsync(false);
 }
 catch (Exception ex)
 {
@@ -155,3 +125,70 @@ catch (Exception ex)
 
 Console.WriteLine();
 Console.WriteLine("Controller stopped.");
+
+static void PrintMatchEvent(
+    TmnfMatchEvent matchEvent)
+{
+    switch (matchEvent)
+    {
+        case PlayerConnectedEvent e:
+            Console.WriteLine(
+                $"[MATCH] PLAYER CONNECTED | {e.Login} | spectator={e.IsSpectator}");
+            break;
+
+        case PlayerDisconnectedEvent e:
+            Console.WriteLine(
+                $"[MATCH] PLAYER DISCONNECTED | {e.Login}");
+            break;
+
+        case PlayerCheckpointEvent e:
+            Console.WriteLine(
+                $"[MATCH] CHECKPOINT | {e.Login} | {e.TimeOrScore} ms | CP={e.CheckpointIndex}");
+            break;
+
+        case PlayerFinishedEvent e:
+            Console.WriteLine(
+                $"[MATCH] FINISH | {e.Login} | {e.TimeOrScore} ms");
+            break;
+
+        case RoundBeganEvent:
+            Console.WriteLine(
+                "[MATCH] ROUND BEGIN");
+            break;
+
+        case RoundEndedEvent:
+            Console.WriteLine(
+                "[MATCH] ROUND END");
+            break;
+
+        case ChallengeBeganEvent:
+            Console.WriteLine(
+                "[MATCH] CHALLENGE BEGIN");
+            break;
+
+        case ChallengeEndedEvent:
+            Console.WriteLine(
+                "[MATCH] CHALLENGE END");
+            break;
+
+        case ServerStatusChangedEvent e:
+            Console.WriteLine(
+                $"[MATCH] SERVER STATUS | {e.StatusCode} | {e.StatusText}");
+            break;
+
+        case ManualFlowTransitionEvent e:
+            Console.WriteLine(
+                $"[MATCH] FLOW BLOCKED | {e.Transition}");
+            break;
+
+        case UnknownTmnfCallbackEvent e:
+            Console.WriteLine(
+                $"[RAW] {e.MethodName}");
+            break;
+
+        default:
+            Console.WriteLine(
+                $"[MATCH] {matchEvent.GetType().Name}");
+            break;
+    }
+}
